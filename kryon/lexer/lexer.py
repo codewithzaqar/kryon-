@@ -25,6 +25,9 @@ class Lexer:
             "spawn": TokenType.SPAWN,
             "struct": TokenType.STRUCT,
             "impl": TokenType.IMPL,
+            "and": TokenType.AND,
+            "or": TokenType.OR,
+            # "print": TokenType.PRINT,
         }
 
     def scan_tokens(self) -> list[Token]:
@@ -102,8 +105,7 @@ class Lexer:
             if self.match('='):
                 self.add_token(TokenType.BANG_EQUAL)
             else:
-                # Handle error or unknown later
-                self.add_token(TokenType.UNKNOWN) 
+                self.add_token(TokenType.BANG) 
         elif c == '<':
             if self.match('='):
                 self.add_token(TokenType.LESS_EQUAL)
@@ -114,6 +116,16 @@ class Lexer:
                 self.add_token(TokenType.GREATER_EQUAL)
             else:
                 self.add_token(TokenType.GREATER)
+        elif c == '&':
+            if self.match('&'):
+                self.add_token(TokenType.AND)
+            else:
+                self.add_token(TokenType.AMPERSAND)
+        elif c == '|':
+            if self.match('|'):
+                self.add_token(TokenType.OR)
+            else:
+                self.add_token(TokenType.PIPE)
         elif c == '"':
             self.string()
         elif c.isdigit():

@@ -16,7 +16,10 @@ class TokenType(Enum):
     COLON = auto()
     STAR = auto()
     SLASH = auto()
+    BANG = auto()
     ARROW = auto()
+    AMPERSAND = auto() 
+    PIPE = auto() 
 
     # One or two character tokens
     BANG_EQUAL = auto()
@@ -26,6 +29,8 @@ class TokenType(Enum):
     GREATER_EQUAL = auto()
     LESS = auto()
     LESS_EQUAL = auto()
+    AMPERSAND_AMPERSAND = auto()
+    PIPE_PIPE = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -48,6 +53,9 @@ class TokenType(Enum):
     SPAWN = auto()
     STRUCT = auto()
     IMPL = auto()
+    AND = auto()
+    OR = auto()
+    PRINT = auto()
 
     # Special
     EOF = auto()
