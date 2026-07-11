@@ -1,24 +1,35 @@
 from ..ast import nodes as ast
-from typing import Dict, Any
+from .environment import Environment, RuntimeError
+from ..lexer.tokens import Token
+import time
 
-class RuntimeError(Exception):
-    def __init__(self, token, message):
-        self.token = token
-        self.message = message
-        super().__init__(message)
+class KryonRuntimeError(RuntimeError):
+    pass
+
+class ReturnSignal(Exception):
+    """Used to unwind the stack when a return statement is encountered."""
+    def __init__(self, value):
+        self.value = value
 
 class Interpreter:
     def __init__(self):
-        self.globals: Dict[str, Any] = {}
-        # Built-in functions
-        self.globals["print"] = lambda *args: print(*args)
+        self.globals = Environment()
+        self.environment = self.globals
+        self._setup_builtins()
+
+    def _setup_builtins(self):
+        self.globals.define("print", lambda *args: print(*args))
+        self.globals.define("clock", lambda: time.time())
+        self.globals.define("input", lambda prompt="": input(prompt))
 
     def interpret(self, statements: list[ast.Stmt]):
         try:
             for statement in statements:
                 self.execute(statement)
-        except RuntimeError as e:
+        except KryonRuntimeError as e:
             print(f"Runtime Error: {e.message}")
+        except ReturnSignal as e:
+            print(f"Unexpected return outside function")
 
     def execute(self, stmt: ast.Stmt):
         stmt.accept(self)
@@ -31,24 +42,43 @@ class Interpreter:
     def visit_expression_stmt(self, stmt: ast.ExpressionStmt):
         self.evaluate(stmt.expression)
 
-    def visit_print_stmt(self, stmt: ast.PrintStmt):
-        value = self.evaluate(stmt.expression)
-        print(value)
-
     def visit_var_decl_stmt(self, stmt: ast.VarDecl):
         value = None
         if stmt.initializer is not None:
             value = self.evaluate(stmt.initializer)
-        self.globals[stmt.name] = value
+        self.environment.define(stmt.name, value)
 
     def visit_block_stmt(self, stmt: ast.Block):
-        # In a full implementation, this would push a new environment scope
-        for statement in stmt.statements:
-            self.execute(statement)
+        # Create a new scope
+        previous_env = self.environment
+        self.environment = Environment(self.environment)
+        
+        try:
+            for statement in stmt.statements:
+                self.execute(statement)
+        finally:
+            # Restore previous scope
+            self.environment = previous_env
+
+    def visit_if_stmt(self, stmt: ast.If):
+        if self.is_truthy(self.evaluate(stmt.condition)):
+            self.execute(stmt.then_branch)
+        elif stmt.else_branch is not None:
+            self.execute(stmt.else_branch)
+
+    def visit_while_stmt(self, stmt: ast.While):
+        while self.is_truthy(self.evaluate(stmt.condition)):
+            self.execute(stmt.body)
 
     def visit_function_decl_stmt(self, stmt: ast.FunctionDecl):
-        # Store function definition in globals
-        self.globals[stmt.name] = stmt
+        # Define function in current environment
+        self.environment.define(stmt.name, stmt)
+
+    def visit_return_stmt(self, stmt: ast.Return):
+        value = None
+        if stmt.value is not None:
+            value = self.evaluate(stmt.value)
+        raise ReturnSignal(value)
 
     # --- Expression Visitors ---
 
@@ -63,7 +93,7 @@ class Interpreter:
         if expr.operator == "-":
             return -right
         if expr.operator == "!":
-            return not right
+            return not self.is_truthy(right)
         return None
 
     def visit_binary_expr(self, expr: ast.Binary):
@@ -71,19 +101,13 @@ class Interpreter:
         right = self.evaluate(expr.right)
 
         if expr.operator == "+":
-            if isinstance(left, float) or isinstance(right, float):
-                return float(left) + float(right)
-            if isinstance(left, int) or isinstance(right, int):
-                return left + right
-            if isinstance(left, str) and isinstance(right, str):
-                return left + right
-        if expr.operator == "-":
-            return left - right
-        if expr.operator == "*":
-            return left * right
-        if expr.operator == "/":
-            if right == 0:
-                raise RuntimeError(None, "Division by zero")
+            if isinstance(left, str) or isinstance(right, str):
+                return str(left) + str(right)
+            return left + right
+        if expr.operator == "-": return left - right
+        if expr.operator == "*": return left * right
+        if expr.operator == "/": 
+            if right == 0: raise KryonRuntimeError(None, "Division by zero")
             return left / right
         
         if expr.operator == ">": return left > right
@@ -92,20 +116,22 @@ class Interpreter:
         if expr.operator == "<=": return left <= right
         if expr.operator == "==": return left == right
         if expr.operator == "!=": return left != right
+        
+        if expr.operator == "and": # Logical AND
+            if not self.is_truthy(left): return left
+            return right
+        if expr.operator == "or": # Logical OR
+            if self.is_truthy(left): return left
+            return right
 
         return None
 
     def visit_variable_expr(self, expr: ast.Variable):
-        if expr.name in self.globals:
-            return self.globals[expr.name]
-        raise RuntimeError(None, f"Undefined variable '{expr.name}'")
+        return self.environment.get(expr.name)
 
     def visit_assign_expr(self, expr: ast.Assign):
         value = self.evaluate(expr.value)
-        if expr.name in self.globals:
-            self.globals[expr.name] = value
-        else:
-            raise RuntimeError(None, f"Undefined variable '{expr.name}'")
+        self.environment.assign(expr.name, value)
         return value
 
     def visit_call_expr(self, expr: ast.Call):
@@ -113,28 +139,37 @@ class Interpreter:
         arguments = [self.evaluate(arg) for arg in expr.arguments]
 
         if callable(callee):
+            if len(arguments) != callee.__code__.co_argcount:
+                 # Simple check, doesn't handle *args
+                 pass 
             return callee(*arguments)
         
         if isinstance(callee, ast.FunctionDecl):
-            # Simple function execution without proper scope handling yet
-            # Save current args
-            old_globals = dict(self.globals)
-            for param, arg in zip(callee.params, arguments):
-                self.globals[param] = arg
+            return self.execute_function(callee, arguments)
             
-            result = None
-            # Execute body
-            for stmt in callee.body.statements:
-                if isinstance(stmt, ast.ExpressionStmt):
-                     result = self.evaluate(stmt.expression)
-                elif isinstance(stmt, ast.ReturnStmt): # Need ReturnStmt in AST
-                     pass 
-                else:
-                     self.execute(stmt)
-            
-            # Restore globals (very naive scoping)
-            self.globals.clear()
-            self.globals.update(old_globals)
-            return result
-            
-        raise RuntimeError(None, "Can only call functions and classes.")
+        raise KryonRuntimeError(None, "Can only call functions and classes.")
+
+    def execute_function(self, func: ast.FunctionDecl, arguments: list):
+        # Create new environment for function scope
+        previous_env = self.environment
+        self.environment = Environment(self.environment)
+        
+        # Bind parameters
+        for param, arg in zip(func.params, arguments):
+            self.environment.define(param, arg)
+        
+        try:
+            for stmt in func.body.statements:
+                self.execute(stmt)
+        except ReturnSignal as e:
+            value = e.value
+            self.environment = previous_env
+            return value
+        
+        self.environment = previous_env
+        return None
+
+    def is_truthy(self, obj):
+        if obj is None: return False
+        if isinstance(obj, bool): return obj
+        return True

@@ -27,6 +27,8 @@ class Parser:
             return self.function_declaration()
         if self.match(TokenType.LET, TokenType.MUT):
             return self.var_declaration()
+        if self.match(TokenType.RETURN):
+            return self.return_statement() # Allow return at top level for testing? Or restrict later.
         return self.statement()
 
     def function_declaration(self) -> ast.FunctionDecl:
@@ -69,7 +71,12 @@ class Parser:
         return ast.VarDecl(name.lexeme, initializer, is_mut)
 
     def statement(self) -> ast.Stmt:
-        
+        if self.match(TokenType.PRINT): # If you added PRINT keyword back, otherwise remove
+             pass 
+        if self.match(TokenType.IF):
+            return self.if_statement()
+        if self.match(TokenType.WHILE):
+            return self.while_statement()
         if self.match(TokenType.LEFT_BRACE):
             return self.block()
         
@@ -247,3 +254,33 @@ class Parser:
             ]:
                 return
             self.advance()
+
+    def return_statement(self) -> ast.Return:
+        keyword = self.previous()
+        value = None
+        if not self.check(TokenType.SEMICOLON):
+            value = self.expression()
+        
+        self.consume(TokenType.SEMICOLON, "Expect ';' after return value.")
+        return ast.Return(keyword, value)
+
+    def if_statement(self) -> ast.If:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' after 'if'.")
+        condition = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after if condition.")
+        
+        then_branch = self.statement()
+        else_branch = None
+        
+        if self.match(TokenType.ELSE):
+            else_branch = self.statement()
+            
+        return ast.If(condition, then_branch, else_branch)
+
+    def while_statement(self) -> ast.While:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' after 'while'.")
+        condition = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after condition.")
+        
+        body = self.statement()
+        return ast.While(condition, body)

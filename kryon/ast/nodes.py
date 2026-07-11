@@ -107,3 +107,28 @@ class Assign(Expr):
 
     def accept(self, visitor):
         return visitor.visit_assign_expr(self)
+
+class If(Stmt):
+    def __init__(self, condition: Expr, then_branch: Stmt, else_branch: Stmt = None):
+        self.condition = condition
+        self.then_branch = then_branch
+        self.else_branch = else_branch
+
+    def accept(self, visitor):
+        return visitor.visit_if_stmt(self)
+
+class While(Stmt):
+    def __init__(self, condition: Expr, body: Stmt):
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor):
+        return visitor.visit_while_stmt(self)
+
+class Return(Stmt):
+    def __init__(self, keyword: Token, value: Expr = None):
+        self.keyword = keyword # For error reporting
+        self.value = value
+
+    def accept(self, visitor):
+        return visitor.visit_return_stmt(self)

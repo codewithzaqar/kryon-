@@ -1,0 +1,19 @@
+let x = 10;
+
+if (x > 5) {
+	print("x is big");
+} else {
+	print("x is small");
+}
+
+let i = 0;
+while (i < 3) {
+	print(i);
+	i = i + 1;
+}
+
+fn greet(name) {
+	return "Hello, " + name;
+}
+
+print(greet("Kryon"));
