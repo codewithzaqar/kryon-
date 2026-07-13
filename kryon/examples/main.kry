@@ -1,11 +1,10 @@
 import "math_utils.kry";
 
 fn main() {
-	let sum = add(10, 20);
+	let sum = math_utils.add(10, 20);
 	print("Sum:");
 	print(sum);
 
-	let sq = square(5);
-	print("Square:");
-	print(sq);
+	print("PI:");
+	print(math_utils.PI);
 }

@@ -138,13 +138,16 @@ class Interpreter:
             if isinstance(struct_def, ast.StructDecl):
                 for method in struct_def.methods:
                     if method.name == expr.name:
-                        # Return a bound method (closure)
-                        # We create a KryonFunction that pre-fills 'self'
                         return BoundMethod(obj, method, self.environment)
             
             raise KryonRuntimeError(None, f"Undefined property '{expr.name}' on struct '{struct_name}'")
+            pass
+        else:
+            if expr.name in obj:
+                return obj[expr.name]
+            raise KryonRuntimeError(None, f"Undefined property '{expr.name}' in object")
         
-        raise KryonRuntimeError(None, "Can only get properties on structs")
+        raise KryonRuntimeError(None, "Can only get properties on structs or objects")
 
     def visit_set_property_expr(self, expr: ast.SetProperty):
         obj = self.evaluate(expr.object)
@@ -298,12 +301,15 @@ class Interpreter:
         module_name = stmt.path
 
         if self.module_resolver.is_loaded(module_name):
+            module_obj = self.module_resolver.get_module_object(module_name)
+            var_name = self._get_module_var_name(stmt.path)
+            self.environment.define(self._get_module_var_name(stmt.path), module_obj)
             return
 
         if not os.path.exists(module_path):
             raise KryonRuntimeError(None, f"Module '{stmt.path}' not found at {module_path}")
 
-        self.module_resolver.mark_loaded(module_name)
+        module_env = Environment(self.globals)
 
         with open(module_path, 'r') as f:
             source = f.read()
@@ -320,10 +326,33 @@ class Interpreter:
         if parser.errors:
             for error in parser.errors:
                 print(f"Error in module {stmt.path}: {error}")
-            return
+            raise KryonRuntimeError(None, f"Failed to parse module {stmt.path}")
 
-        for statement in statements:
-            self.execute(statement)
+        self.module_resolver.mark_loaded(module_name)
+
+        previous_env = self.environment
+        self.environment = module_env
+
+        try:
+            for statement in statements:
+                self.execute(statement)
+        finally:
+            self.environment = previous_env
+
+        module_obj = {}
+        for key, value in module_env.values.items():
+            module_obj[key] = value
+
+        self.module_resolver.store_module_object(module_name, module_obj)
+
+        var_name = self._get_module_var_name(stmt.path)
+        self.environment.define(var_name, module_obj)
+
+    def _get_module_var_name(self, path: str):
+        name = os.path.basename(path)
+        if name.endswith(".kry"):
+            name = name[:-4]
+        return name
 
 class KryonFunction:
     def __init__(self, params, body, closure):

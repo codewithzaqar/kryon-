@@ -2,6 +2,4 @@ fn add(a, b) {
 	return a + b;
 }
 
-fn square(x) {
-	return x * x;
-}
+let PI = 3.14159;
